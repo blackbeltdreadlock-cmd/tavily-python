@@ -8,6 +8,23 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 
+/** How many ranked chunks to pull before the token budget trims them further. */
+const KNOWLEDGE_CHUNK_LIMIT = 8;
+/** Share of the bot's max_tokens that retrieved knowledge may occupy. */
+const KNOWLEDGE_BUDGET_RATIO = 0.25;
+
+interface KnowledgeChunk {
+  title: string;
+  content: string;
+  tokens: number;
+}
+
+/** Mirrors estimateTokens in lib/knowledge.ts -- kept local since Edge Functions
+ *  can't import from the app bundle. */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -69,19 +86,38 @@ Deno.serve(async (req) => {
       { role: 'user', content: message },
     ];
 
-    // Fetch knowledge base for context
-    const { data: knowledge } = await supabase
-      .from('bot_knowledge')
-      .select('title, content')
-      .eq('bot_id', bot_id)
-      .limit(5);
+    // Retrieve the knowledge chunks that actually relate to this message,
+    // ranked by Postgres full-text search rather than an arbitrary top-N.
+    const { data: knowledge } = await supabase.rpc('search_bot_knowledge', {
+      p_bot_id: bot_id,
+      p_query: message,
+      p_limit: KNOWLEDGE_CHUNK_LIMIT,
+    });
 
     let systemPrompt = bot.system_prompt;
+
     if (knowledge && knowledge.length > 0) {
-      const knowledgeContext = knowledge
-        .map((k: { title: string; content: string }) => `[${k.title}]\n${k.content}`)
-        .join('\n\n');
-      systemPrompt += `\n\nKnowledge Base:\n${knowledgeContext}`;
+      // Cap retrieved context so a large knowledge base can't crowd out the
+      // conversation itself.
+      const budget = Math.floor((bot.max_tokens || 2048) * KNOWLEDGE_BUDGET_RATIO);
+      const selected: string[] = [];
+      let used = 0;
+
+      for (const chunk of knowledge as KnowledgeChunk[]) {
+        const cost = chunk.tokens || estimateTokens(chunk.content);
+        if (used + cost > budget) break;
+        selected.push(`[${chunk.title}]\n${chunk.content}`);
+        used += cost;
+      }
+
+      if (selected.length > 0) {
+        systemPrompt +=
+          `\n\n## Base de conhecimento\n\n` +
+          `Os trechos abaixo vieram dos documentos deste bot e foram selecionados ` +
+          `por relevancia para a mensagem atual. Use-os quando responder e cite o ` +
+          `titulo entre colchetes. Se a resposta nao estiver neles, diga que nao ` +
+          `sabe em vez de inventar.\n\n${selected.join('\n\n---\n\n')}`;
+      }
     }
 
     const apiKey = Deno.env.get('ANTHROPIC_API_KEY');

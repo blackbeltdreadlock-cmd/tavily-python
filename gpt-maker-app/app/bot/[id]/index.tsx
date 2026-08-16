@@ -73,6 +73,34 @@ export default function BotDetailScreen() {
           />
         </View>
 
+        <View style={styles.menu}>
+          <Card onPress={() => router.push(`/bot/${id}/knowledge` as any)}>
+            <View style={styles.menuRow}>
+              <Ionicons name="library-outline" size={22} color={Colors.brand.primary} />
+              <View style={styles.menuText}>
+                <Text style={[styles.menuTitle, { color: colors.text }]}>Base de Conhecimento</Text>
+                <Text style={[styles.menuSub, { color: colors.textSecondary }]}>
+                  Documentos que o bot consulta ao responder
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+            </View>
+          </Card>
+
+          <Card onPress={() => router.push(`/bot/${id}/preview` as any)}>
+            <View style={styles.menuRow}>
+              <Ionicons name="flask-outline" size={22} color={Colors.brand.primary} />
+              <View style={styles.menuText}>
+                <Text style={[styles.menuTitle, { color: colors.text }]}>Preview</Text>
+                <Text style={[styles.menuSub, { color: colors.textSecondary }]}>
+                  Testar sem salvar no historico
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+            </View>
+          </Card>
+        </View>
+
         <View style={styles.statsRow}>
           <Card style={styles.statCard}>
             <Text style={[styles.statValue, { color: Colors.brand.primary }]}>
@@ -118,6 +146,11 @@ const styles = StyleSheet.create({
   name: { fontSize: 24, fontWeight: '700', marginTop: 12 },
   description: { fontSize: 15, marginTop: 4, textAlign: 'center', paddingHorizontal: 40 },
   actions: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, marginBottom: 20 },
+  menu: { paddingHorizontal: 20, gap: 8, marginBottom: 20 },
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  menuText: { flex: 1 },
+  menuTitle: { fontSize: 16, fontWeight: '600' },
+  menuSub: { fontSize: 13, marginTop: 1 },
   statsRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginBottom: 20 },
   statCard: { flex: 1, alignItems: 'center', paddingVertical: 16 },
   statValue: { fontSize: 24, fontWeight: '700' },

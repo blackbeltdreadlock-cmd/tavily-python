@@ -42,7 +42,30 @@ export interface BotKnowledge {
   source_url: string | null;
   file_path: string | null;
   tokens: number;
+  status: 'processing' | 'ready' | 'error';
+  chunk_count: number;
+  error_message: string | null;
   created_at: string;
+}
+
+export interface BotKnowledgeChunk {
+  id: string;
+  knowledge_id: string;
+  bot_id: string;
+  chunk_index: number;
+  content: string;
+  tokens: number;
+  created_at: string;
+}
+
+/** Shape returned by the `search_bot_knowledge` RPC. */
+export interface KnowledgeSearchResult {
+  chunk_id: string;
+  knowledge_id: string;
+  title: string;
+  content: string;
+  tokens: number;
+  rank: number;
 }
 
 export interface Conversation {

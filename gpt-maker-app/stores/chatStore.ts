@@ -12,6 +12,7 @@ interface ChatState {
   fetchConversations: (botId?: string) => Promise<void>;
   createConversation: (botId: string) => Promise<Conversation>;
   setActiveConversation: (conv: Conversation | null) => void;
+  deleteConversation: (id: string) => Promise<void>;
   fetchMessages: (conversationId: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
   subscribeToMessages: (conversationId: string) => () => void;
@@ -57,6 +58,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   setActiveConversation: (conv) => set({ activeConversation: conv, messages: [] }),
+
+  deleteConversation: async (id) => {
+    const { error } = await supabase.from('conversations').delete().eq('id', id);
+    if (error) throw error;
+
+    set((state) => ({
+      conversations: state.conversations.filter((c) => c.id !== id),
+      activeConversation: state.activeConversation?.id === id ? null : state.activeConversation,
+      messages: state.activeConversation?.id === id ? [] : state.messages,
+    }));
+  },
 
   fetchMessages: async (conversationId) => {
     const { data, error } = await supabase
