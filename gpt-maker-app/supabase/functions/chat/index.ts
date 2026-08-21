@@ -191,13 +191,14 @@ Deno.serve(async (req) => {
             content: fullContent,
           });
 
-          // Update conversation
+          // Bump updated_at so this conversation sorts to the top of the
+          // history list and resumeOrCreateConversation picks it up.
+          // message_count is owned by a trigger (migration 004) -- computing it
+          // here produced a count derived from the truncated history window,
+          // which froze at 22 once a conversation outgrew the window.
           await supabase
             .from('conversations')
-            .update({
-              message_count: (history?.length ?? 0) + 2,
-              updated_at: new Date().toISOString(),
-            })
+            .update({ updated_at: new Date().toISOString() })
             .eq('id', conversation_id);
 
           controller.enqueue(encoder.encode('data: [DONE]\n\n'));

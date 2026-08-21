@@ -121,6 +121,18 @@ export interface UserBotAccess {
   created_at: string;
 }
 
+export interface BotTemplate {
+  id: string;
+  name: string;
+  description: string;
+  system_prompt: string;
+  welcome_message: string | null;
+  category: string | null;
+  icon: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
 export interface Favorite {
   id: string;
   user_id: string;

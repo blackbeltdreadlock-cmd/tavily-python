@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, FlatList, Text, Pressable } from 'react-native';
+import { View, StyleSheet, FlatList, Text, Pressable, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, Stack, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeColors } from '@/hooks/useThemeColor';
@@ -25,6 +25,9 @@ export default function ChatScreen() {
     resumeOrCreateConversation,
     sendMessage,
     fetchMessages,
+    loadOlderMessages,
+    hasMoreMessages,
+    loadingOlder,
     setActiveConversation,
   } = useChatStore();
 
@@ -112,6 +115,14 @@ export default function ChatScreen() {
           contentContainerStyle={styles.messagesList}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           ListFooterComponent={isStreaming && !streamingContent ? <TypingIndicator /> : null}
+          // Older messages page in when the user reaches the top.
+          onStartReached={hasMoreMessages ? () => loadOlderMessages() : undefined}
+          onStartReachedThreshold={0.2}
+          ListHeaderComponent={
+            loadingOlder ? (
+              <ActivityIndicator style={styles.olderSpinner} color={colors.textSecondary} />
+            ) : null
+          }
         />
 
         <ChatInput onSend={handleSend} disabled={isStreaming} />
@@ -124,6 +135,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   headerActions: { flexDirection: 'row', gap: 18, marginRight: 4 },
   messagesList: { paddingVertical: 16 },
+  olderSpinner: { paddingVertical: 12 },
   welcome: { padding: 20, alignItems: 'center' },
   welcomeText: { fontSize: 15, textAlign: 'center', fontStyle: 'italic' },
 });

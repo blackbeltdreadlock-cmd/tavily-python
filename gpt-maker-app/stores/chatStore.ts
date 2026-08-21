@@ -2,12 +2,16 @@ import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import type { Conversation, Message } from '@/types';
 
+const MESSAGE_PAGE_SIZE = 50;
+
 interface ChatState {
   conversations: Conversation[];
   activeConversation: Conversation | null;
   messages: Message[];
   isStreaming: boolean;
   streamingContent: string;
+  hasMoreMessages: boolean;
+  loadingOlder: boolean;
 
   fetchConversations: (botId?: string) => Promise<void>;
   createConversation: (botId: string) => Promise<Conversation>;
@@ -15,6 +19,7 @@ interface ChatState {
   setActiveConversation: (conv: Conversation | null) => void;
   deleteConversation: (id: string) => Promise<void>;
   fetchMessages: (conversationId: string) => Promise<void>;
+  loadOlderMessages: () => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
   subscribeToMessages: (conversationId: string) => () => void;
 }
@@ -25,6 +30,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   isStreaming: false,
   streamingContent: '',
+  hasMoreMessages: false,
+  loadingOlder: false,
 
   fetchConversations: async (botId) => {
     let query = supabase
@@ -98,41 +105,74 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
   },
 
+  /** Loads the most recent page, oldest-first for rendering. */
   fetchMessages: async (conversationId) => {
     const { data, error } = await supabase
       .from('messages')
       .select('*')
       .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: false })
+      .limit(MESSAGE_PAGE_SIZE);
 
     if (error) throw error;
-    set({ messages: data ?? [] });
+
+    const page = data ?? [];
+    set({
+      messages: page.slice().reverse(),
+      hasMoreMessages: page.length === MESSAGE_PAGE_SIZE,
+    });
+  },
+
+  /** Pages backwards from the oldest message currently held. */
+  loadOlderMessages: async () => {
+    const { activeConversation, messages, hasMoreMessages, loadingOlder } = get();
+    if (!activeConversation || !hasMoreMessages || loadingOlder || messages.length === 0) return;
+
+    set({ loadingOlder: true });
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', activeConversation.id)
+        .lt('created_at', messages[0].created_at)
+        .order('created_at', { ascending: false })
+        .limit(MESSAGE_PAGE_SIZE);
+
+      if (error) throw error;
+
+      const page = data ?? [];
+      set((state) => ({
+        messages: [...page.slice().reverse(), ...state.messages],
+        hasMoreMessages: page.length === MESSAGE_PAGE_SIZE,
+      }));
+    } finally {
+      set({ loadingOlder: false });
+    }
   },
 
   sendMessage: async (content) => {
     const { activeConversation, messages } = get();
     if (!activeConversation) return;
 
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      conversation_id: activeConversation.id,
-      role: 'user',
-      content,
-      tokens_used: 0,
-      created_at: new Date().toISOString(),
-    };
-
-    set({ messages: [...messages, userMessage], isStreaming: true, streamingContent: '' });
+    set({ isStreaming: true, streamingContent: '' });
 
     try {
-      const { error: msgError } = await supabase
+      // Insert first and render the row the database returned, rather than a
+      // client-generated UUID that would never match it. Realtime dedupes by
+      // id, so a client-side id makes that guard useless -- which is why
+      // subscribeToMessages stays unwired for now.
+      const { data: userMessage, error: msgError } = await supabase
         .from('messages')
         .insert({
           conversation_id: activeConversation.id,
           role: 'user',
           content,
-        });
+        })
+        .select()
+        .single();
       if (msgError) throw msgError;
+
+      set({ messages: [...messages, userMessage as Message] });
 
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch(
@@ -183,8 +223,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
 
-      const assistantMessage: Message = {
-        id: crypto.randomUUID(),
+      // The edge function persists the assistant reply, so read that row back
+      // instead of inventing an id locally. Falls back to the streamed text if
+      // the read fails, so a persistence hiccup never hides the answer the user
+      // already watched arrive.
+      const { data: persisted } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', activeConversation.id)
+        .eq('role', 'assistant')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const assistantMessage: Message = (persisted as Message | null) ?? {
+        id: `local-${Date.now()}`,
         conversation_id: activeConversation.id,
         role: 'assistant',
         content: fullContent,
