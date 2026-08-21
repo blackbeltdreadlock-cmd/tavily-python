@@ -1,15 +1,39 @@
+import { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeColors } from '@/hooks/useThemeColor';
 import { useAuthStore } from '@/stores/authStore';
+import { supabase } from '@/lib/supabase';
 import { Card } from '@/components/ui/Card';
+import { BotCard } from '@/components/bot/BotCard';
 import { BOT_CATEGORIES } from '@/lib/constants';
 import Colors from '@/constants/Colors';
+import type { Bot, MarketplaceListing } from '@/types';
+
+type FeaturedListing = MarketplaceListing & { bot: Bot };
 
 export default function HomeScreen() {
   const colors = useThemeColors();
   const profile = useAuthStore((s) => s.profile);
+  const [featured, setFeatured] = useState<FeaturedListing[]>([]);
+
+  const fetchFeatured = useCallback(async () => {
+    const { data } = await supabase
+      .from('marketplace_listings')
+      .select('*, bot:bots!inner(*)')
+      .order('is_featured', { ascending: false })
+      .order('download_count', { ascending: false })
+      .limit(5);
+
+    setFeatured(((data as FeaturedListing[] | null) ?? []).filter((l) => l.bot));
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchFeatured();
+    }, [fetchFeatured]),
+  );
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -55,11 +79,23 @@ export default function HomeScreen() {
       </View>
 
       <Text style={[styles.sectionTitle, { color: colors.text }]}>Destaques</Text>
-      <Card style={styles.featuredCard}>
-        <Text style={[styles.featuredText, { color: colors.textSecondary }]}>
-          Em breve: bots em destaque no marketplace
-        </Text>
-      </Card>
+      {featured.length > 0 ? (
+        <View style={styles.featuredList}>
+          {featured.map((listing) => (
+            <BotCard
+              key={listing.id}
+              bot={listing.bot}
+              onPress={() => router.push(`/marketplace/${listing.id}` as any)}
+            />
+          ))}
+        </View>
+      ) : (
+        <Card style={styles.featuredCard}>
+          <Text style={[styles.featuredText, { color: colors.textSecondary }]}>
+            Nenhum bot publicado ainda. Crie o seu e seja o primeiro!
+          </Text>
+        </Card>
+      )}
     </ScrollView>
   );
 }
@@ -112,5 +148,6 @@ const styles = StyleSheet.create({
   },
   categoryName: { fontSize: 14, fontWeight: '500', marginTop: 8 },
   featuredCard: { marginHorizontal: 20, marginBottom: 32 },
+  featuredList: { paddingHorizontal: 20, paddingBottom: 32 },
   featuredText: { textAlign: 'center', fontSize: 14 },
 });

@@ -1,32 +1,54 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, Pressable, Share } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeColors } from '@/hooks/useThemeColor';
 import { supabase } from '@/lib/supabase';
+import { useMarketplaceStore } from '@/stores/marketplaceStore';
+import { useReviewStore } from '@/stores/reviewStore';
+import { useAuthStore } from '@/stores/authStore';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import type { MarketplaceListing, Bot, Review, Profile } from '@/types';
+import { Input } from '@/components/ui/Input';
+import { RatingStars } from '@/components/marketplace/RatingStars';
+import { ReportSheet } from '@/components/marketplace/ReportSheet';
+import { botShareUrl } from '@/lib/share';
 import Colors from '@/constants/Colors';
+import type { Bot, MarketplaceListing, Profile } from '@/types';
 
-type FullListing = MarketplaceListing & {
-  bot: Bot & { owner: Profile };
-};
+type FullListing = MarketplaceListing & { bot: Bot & { owner: Profile } };
 
 export default function ListingDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useThemeColors();
+  const session = useAuthStore((s) => s.session);
+
+  const { toggleFavorite, isFavorite, fetchFavorites, reportContent } = useMarketplaceStore();
+  const { reviews, myReview, fetchReviews, submitReview } = useReviewStore();
+
   const [listing, setListing] = useState<FullListing | null>(null);
-  const [reviews, setReviews] = useState<(Review & { user: Profile })[]>([]);
+  const [hasAccess, setHasAccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [draftRating, setDraftRating] = useState(0);
+  const [draftComment, setDraftComment] = useState('');
+
+  const isOwner = !!listing && listing.bot.owner_id === session?.user.id;
 
   useEffect(() => {
-    if (id) {
-      fetchListing();
-      fetchReviews();
-    }
+    if (!id) return;
+    fetchListing();
+    fetchReviews(id);
+    fetchFavorites();
   }, [id]);
+
+  useEffect(() => {
+    if (myReview) {
+      setDraftRating(myReview.rating);
+      setDraftComment(myReview.comment ?? '');
+    }
+  }, [myReview]);
 
   const fetchListing = async () => {
     const { data } = await supabase
@@ -34,17 +56,20 @@ export default function ListingDetailScreen() {
       .select('*, bot:bots(*, owner:profiles(*))')
       .eq('id', id)
       .single();
-    if (data) setListing(data as FullListing);
-  };
 
-  const fetchReviews = async () => {
-    const { data } = await supabase
-      .from('reviews')
-      .select('*, user:profiles(username, display_name, avatar_url)')
-      .eq('listing_id', id)
-      .order('created_at', { ascending: false })
-      .limit(10);
-    if (data) setReviews(data as any);
+    if (!data) return;
+    setListing(data as FullListing);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: access } = await supabase
+        .from('user_bot_access')
+        .select('id')
+        .eq('bot_id', (data as FullListing).bot_id)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      setHasAccess(!!access);
+    }
   };
 
   const handleGetBot = async () => {
@@ -54,18 +79,22 @@ export default function ListingDetailScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      await supabase.from('user_bot_access').insert({
+      const { error } = await supabase.from('user_bot_access').insert({
         user_id: user.id,
         bot_id: listing.bot_id,
-        access_type: listing.price_type === 'free' ? 'free' : 'purchased',
+        access_type: 'free',
       });
+      // Already owned is not an error worth showing.
+      if (error && error.code !== '23505') throw error;
 
       await supabase
         .from('marketplace_listings')
         .update({ download_count: (listing.download_count ?? 0) + 1 })
         .eq('id', listing.id);
 
+      setHasAccess(true);
       Alert.alert('Bot adicionado!', 'Voce ja pode conversar com este bot.', [
+        { text: 'Depois', style: 'cancel' },
         { text: 'Conversar', onPress: () => router.push(`/bot/${listing.bot_id}/chat` as any) },
       ]);
     } catch (error: any) {
@@ -75,9 +104,27 @@ export default function ListingDetailScreen() {
     }
   };
 
-  if (!listing) return null;
+  const handleSubmitReview = async () => {
+    if (!id || draftRating === 0) return;
+    try {
+      await submitReview(id, draftRating, draftComment);
+      await fetchListing();
+      Alert.alert('Obrigado!', 'Sua avaliacao foi registrada.');
+    } catch (error: any) {
+      Alert.alert('Nao foi possivel avaliar', error.message);
+    }
+  };
 
+  const handleShare = async () => {
+    if (!listing) return;
+    await Share.share({
+      message: `Conheca "${listing.bot.name}" no GPT Maker: ${botShareUrl(listing.bot_id)}`,
+    });
+  };
+
+  if (!listing) return null;
   const { bot } = listing;
+  const favorited = isFavorite(bot.id);
 
   return (
     <>
@@ -88,6 +135,23 @@ export default function ListingDetailScreen() {
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
           headerShadowVisible: false,
+          headerRight: () => (
+            <View style={styles.headerActions}>
+              <Pressable onPress={handleShare} hitSlop={8}>
+                <Ionicons name="share-outline" size={22} color={colors.text} />
+              </Pressable>
+              <Pressable
+                onPress={() => toggleFavorite(bot.id).catch(() => {})}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name={favorited ? 'heart' : 'heart-outline'}
+                  size={22}
+                  color={favorited ? Colors.brand.danger : colors.text}
+                />
+              </Pressable>
+            </View>
+          ),
         }}
       />
       <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -97,6 +161,14 @@ export default function ListingDetailScreen() {
           <Text style={[styles.creator, { color: colors.textSecondary }]}>
             por {bot.owner?.display_name ?? bot.owner?.username}
           </Text>
+          {bot.rating_count > 0 && (
+            <View style={styles.headerRating}>
+              <RatingStars value={Number(bot.rating_avg)} size={16} />
+              <Text style={[styles.creator, { color: colors.textSecondary }]}>
+                {Number(bot.rating_avg).toFixed(1)} ({bot.rating_count})
+              </Text>
+            </View>
+          )}
           <Text style={[styles.description, { color: colors.textSecondary }]}>
             {bot.description}
           </Text>
@@ -109,7 +181,7 @@ export default function ListingDetailScreen() {
           </View>
           <View style={styles.stat}>
             <Text style={[styles.statValue, { color: colors.text }]}>
-              {bot.rating_avg > 0 ? bot.rating_avg.toFixed(1) : '-'}
+              {bot.rating_count > 0 ? Number(bot.rating_avg).toFixed(1) : '-'}
             </Text>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Avaliacao</Text>
           </View>
@@ -121,24 +193,44 @@ export default function ListingDetailScreen() {
           </View>
         </View>
 
-        <View style={styles.priceSection}>
-          <Text style={[styles.price, { color: Colors.brand.primary }]}>
-            {listing.price_type === 'free'
-              ? 'Gratis'
-              : `R$ ${listing.price_amount.toFixed(2)}`}
-          </Text>
-          <Button
-            title={listing.price_type === 'free' ? 'Obter Gratis' : 'Comprar'}
-            onPress={handleGetBot}
-            loading={loading}
-            size="lg"
-            style={{ flex: 1 }}
-          />
+        <View style={styles.actionSection}>
+          {hasAccess ? (
+            <Button
+              title="Conversar"
+              onPress={() => router.push(`/bot/${bot.id}/chat` as any)}
+              size="lg"
+            />
+          ) : (
+            <Button title="Obter Gratis" onPress={handleGetBot} loading={loading} size="lg" />
+          )}
         </View>
+
+        {/* Reviewing requires having acquired the bot, and owners can't review
+            their own -- both enforced in the database as well. */}
+        {hasAccess && !isOwner && (
+          <Card style={styles.reviewForm}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              {myReview ? 'Sua avaliacao' : 'Avaliar este bot'}
+            </Text>
+            <RatingStars value={draftRating} size={30} onChange={setDraftRating} />
+            <Input
+              placeholder="Conte como foi sua experiencia (opcional)"
+              value={draftComment}
+              onChangeText={setDraftComment}
+              multiline
+              style={{ height: 70, textAlignVertical: 'top', marginTop: 12 }}
+            />
+            <Button
+              title={myReview ? 'Atualizar avaliacao' : 'Enviar avaliacao'}
+              onPress={handleSubmitReview}
+              disabled={draftRating === 0}
+            />
+          </Card>
+        )}
 
         {reviews.length > 0 && (
           <>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            <Text style={[styles.sectionTitle, styles.reviewsHeading, { color: colors.text }]}>
               Avaliacoes ({reviews.length})
             </Text>
             {reviews.map((review) => (
@@ -149,21 +241,15 @@ export default function ListingDetailScreen() {
                     name={review.user?.display_name ?? review.user?.username}
                     size={32}
                   />
-                  <View>
+                  <View style={styles.reviewMeta}>
                     <Text style={[styles.reviewUser, { color: colors.text }]}>
                       {review.user?.display_name ?? review.user?.username}
                     </Text>
-                    <View style={styles.stars}>
-                      {[1, 2, 3, 4, 5].map((n) => (
-                        <Ionicons
-                          key={n}
-                          name={n <= review.rating ? 'star' : 'star-outline'}
-                          size={14}
-                          color="#fdcb6e"
-                        />
-                      ))}
-                    </View>
+                    <RatingStars value={review.rating} size={14} />
                   </View>
+                  <Pressable onPress={() => setReporting(true)} hitSlop={8}>
+                    <Ionicons name="flag-outline" size={16} color={colors.textSecondary} />
+                  </Pressable>
                 </View>
                 {review.comment && (
                   <Text style={[styles.reviewComment, { color: colors.text }]}>
@@ -174,33 +260,59 @@ export default function ListingDetailScreen() {
             ))}
           </>
         )}
+
+        <Pressable onPress={() => setReporting(true)} style={styles.reportLink}>
+          <Ionicons name="flag-outline" size={15} color={colors.textSecondary} />
+          <Text style={[styles.reportText, { color: colors.textSecondary }]}>
+            Denunciar este bot
+          </Text>
+        </Pressable>
       </ScrollView>
+
+      <ReportSheet
+        visible={reporting}
+        title="Denunciar"
+        onClose={() => setReporting(false)}
+        onSubmit={async (reason, details) => {
+          try {
+            await reportContent('bot', bot.id, reason, details);
+            Alert.alert('Denuncia enviada', 'Obrigado. Vamos analisar o conteudo.');
+          } catch (error: any) {
+            Alert.alert('Erro', error.message);
+          }
+        }}
+      />
     </>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  headerActions: { flexDirection: 'row', gap: 18, marginRight: 4 },
   header: { alignItems: 'center', paddingTop: 24, paddingBottom: 16, paddingHorizontal: 20 },
   name: { fontSize: 24, fontWeight: '700', marginTop: 12 },
   creator: { fontSize: 14, marginTop: 2 },
+  headerRating: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   description: { fontSize: 15, marginTop: 8, textAlign: 'center', lineHeight: 22 },
   statsRow: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 16 },
   stat: { alignItems: 'center' },
   statValue: { fontSize: 20, fontWeight: '700' },
   statLabel: { fontSize: 12, marginTop: 2 },
-  priceSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  price: { fontSize: 24, fontWeight: '800' },
-  sectionTitle: { fontSize: 20, fontWeight: '700', paddingHorizontal: 20, marginBottom: 12 },
+  actionSection: { paddingHorizontal: 20, marginBottom: 24 },
+  sectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12 },
+  reviewsHeading: { paddingHorizontal: 20 },
+  reviewForm: { marginHorizontal: 20, marginBottom: 24, gap: 4 },
   reviewCard: { marginHorizontal: 20, marginBottom: 10 },
   reviewHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  reviewMeta: { flex: 1, gap: 3 },
   reviewUser: { fontSize: 14, fontWeight: '600' },
-  stars: { flexDirection: 'row', gap: 2 },
   reviewComment: { fontSize: 14, lineHeight: 20 },
+  reportLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 28,
+  },
+  reportText: { fontSize: 13 },
 });

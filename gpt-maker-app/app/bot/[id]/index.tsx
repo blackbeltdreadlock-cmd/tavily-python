@@ -99,6 +99,40 @@ export default function BotDetailScreen() {
               <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
             </View>
           </Card>
+
+          <Card onPress={() => router.push(`/bot/${id}/conversations` as any)}>
+            <View style={styles.menuRow}>
+              <Ionicons name="time-outline" size={22} color={Colors.brand.primary} />
+              <View style={styles.menuText}>
+                <Text style={[styles.menuTitle, { color: colors.text }]}>Conversas</Text>
+                <Text style={[styles.menuSub, { color: colors.textSecondary }]}>
+                  Retomar ou apagar conversas anteriores
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+            </View>
+          </Card>
+
+          <Card onPress={() => router.push(`/bot/${id}/publish` as any)}>
+            <View style={styles.menuRow}>
+              <Ionicons
+                name={bot.is_published ? 'checkmark-circle-outline' : 'rocket-outline'}
+                size={22}
+                color={bot.is_published ? Colors.brand.success : Colors.brand.primary}
+              />
+              <View style={styles.menuText}>
+                <Text style={[styles.menuTitle, { color: colors.text }]}>
+                  {bot.is_published ? 'Publicado' : 'Publicar'}
+                </Text>
+                <Text style={[styles.menuSub, { color: colors.textSecondary }]}>
+                  {bot.is_published
+                    ? 'Visivel no marketplace · toque para gerenciar'
+                    : 'Disponibilizar no marketplace'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+            </View>
+          </Card>
         </View>
 
         <View style={styles.statsRow}>

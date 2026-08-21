@@ -9,6 +9,8 @@ export default function BotLayout() {
       <Stack.Screen name="[id]/chat" />
       <Stack.Screen name="[id]/knowledge" />
       <Stack.Screen name="[id]/preview" />
+      <Stack.Screen name="[id]/publish" />
+      <Stack.Screen name="[id]/conversations" />
     </Stack>
   );
 }
