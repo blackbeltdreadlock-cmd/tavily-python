@@ -133,6 +133,19 @@ export interface BotTemplate {
   created_at: string;
 }
 
+export interface BotVersion {
+  id: string;
+  bot_id: string;
+  version_number: number;
+  system_prompt: string;
+  welcome_message: string | null;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  created_by: string;
+  created_at: string;
+}
+
 export interface Favorite {
   id: string;
   user_id: string;
