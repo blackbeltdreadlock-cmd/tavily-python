@@ -15,6 +15,7 @@ export default function ChatScreen() {
   const colors = useThemeColors();
   const flatListRef = useRef<FlatList>(null);
   const [bot, setBot] = useState<Bot | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   const {
     activeConversation,
@@ -29,6 +30,7 @@ export default function ChatScreen() {
     hasMoreMessages,
     loadingOlder,
     setActiveConversation,
+    subscribeToMessages,
   } = useChatStore();
 
   const { fetchBot } = useBotStore();
@@ -38,19 +40,32 @@ export default function ChatScreen() {
       fetchBot(botId).then(setBot);
       initConversation();
     }
-    return () => setActiveConversation(null);
+    return () => {
+      setActiveConversation(null);
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
+    };
   }, [botId]);
 
   const initConversation = async () => {
     if (!botId) return;
     const conv = await resumeOrCreateConversation(botId);
     await fetchMessages(conv.id);
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+    }
+    unsubscribeRef.current = subscribeToMessages(conv.id);
   };
 
   const handleNewConversation = async () => {
     if (!botId) return;
     const conv = await createConversation(botId);
     await fetchMessages(conv.id);
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+    }
+    unsubscribeRef.current = subscribeToMessages(conv.id);
   };
 
   const handleSend = async (content: string) => {
