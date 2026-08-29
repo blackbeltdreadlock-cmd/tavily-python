@@ -29,6 +29,41 @@ Deno.serve(async (req) => {
     const pathSegments = url.pathname.split('/');
     const botId = pathSegments[pathSegments.length - 1];
 
+    // Get user from Authorization header
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const token = authHeader.replace('Bearer ', '');
+    let userId: string | null = null;
+    let userTier: string = 'free';
+
+    if (token) {
+      const { data } = await supabase.auth.getUser(token);
+      userId = data.user?.id ?? null;
+
+      if (userId) {
+        // Get user tier
+        const { data: rateLimit } = await supabase
+          .from('rate_limits')
+          .select('tier')
+          .eq('user_id', userId)
+          .single();
+
+        userTier = rateLimit?.tier ?? 'free';
+
+        // Check and increment rate limit
+        const { data: limitOk, error: limitError } = await supabase.rpc(
+          'check_and_increment_rate_limit',
+          { p_user_id: userId, p_tier: userTier }
+        );
+
+        if (limitError || !limitOk) {
+          return new Response(JSON.stringify({ error: 'Rate limit exceeded. Free tier: 100 calls/day, Premium: 10000 calls/day.' }), {
+            status: 429,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          });
+        }
+      }
+    }
+
     // GET /functions/v1/api-bots/:id
     if (botId && botId !== 'api-bots') {
       const { data: bot, error: botError } = await supabase
