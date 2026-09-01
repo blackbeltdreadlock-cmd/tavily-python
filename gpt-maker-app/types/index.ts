@@ -121,6 +121,66 @@ export interface UserBotAccess {
   created_at: string;
 }
 
+export interface BotTemplate {
+  id: string;
+  name: string;
+  description: string;
+  system_prompt: string;
+  welcome_message: string | null;
+  category: string | null;
+  icon: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface BotVersion {
+  id: string;
+  bot_id: string;
+  version_number: number;
+  system_prompt: string;
+  welcome_message: string | null;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  created_by: string;
+  created_at: string;
+}
+
+export interface Favorite {
+  id: string;
+  user_id: string;
+  bot_id: string;
+  created_at: string;
+  bot?: Bot;
+}
+
+export type ReportTarget = 'bot' | 'review';
+
+export interface Report {
+  id: string;
+  reporter_id: string;
+  target_type: ReportTarget;
+  target_id: string;
+  reason: string;
+  details: string | null;
+  status: 'open' | 'reviewed' | 'dismissed';
+  created_at: string;
+}
+
+/** Shape returned by the `creator_stats` RPC. */
+export interface CreatorStat {
+  bot_id: string;
+  name: string;
+  avatar_url: string | null;
+  is_published: boolean;
+  acquisitions: number;
+  conversations: number;
+  rating_avg: number;
+  rating_count: number;
+}
+
+export type MarketplaceSort = 'popular' | 'recent' | 'rating';
+
 export interface Category {
   id: string;
   name: string;

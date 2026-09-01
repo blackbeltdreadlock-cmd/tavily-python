@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeColors } from '@/hooks/useThemeColor';
 import { useAuthStore } from '@/stores/authStore';
@@ -47,10 +48,17 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
           </View>
         </Card>
-        <Card style={styles.menuItem}>
+        <Card style={styles.menuItem} onPress={() => router.push('/creator/favorites' as any)}>
+          <View style={styles.menuRow}>
+            <Ionicons name="heart-outline" size={22} color={colors.tint} />
+            <Text style={[styles.menuText, { color: colors.text }]}>Favoritos</Text>
+            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+          </View>
+        </Card>
+        <Card style={styles.menuItem} onPress={() => router.push('/creator/dashboard' as any)}>
           <View style={styles.menuRow}>
             <Ionicons name="stats-chart-outline" size={22} color={colors.tint} />
-            <Text style={[styles.menuText, { color: colors.text }]}>Analytics</Text>
+            <Text style={[styles.menuText, { color: colors.text }]}>Painel do Criador</Text>
             <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
           </View>
         </Card>

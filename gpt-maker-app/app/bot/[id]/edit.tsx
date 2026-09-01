@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, Pressable } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import { useThemeColors } from '@/hooks/useThemeColor';
 import { useBotStore } from '@/stores/botStore';
+import { useVersionStore } from '@/stores/versionStore';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -19,6 +20,7 @@ export default function EditBotScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useThemeColors();
   const { fetchBot, updateBot } = useBotStore();
+  const { createVersion } = useVersionStore();
   const [bot, setBot] = useState<Bot | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -63,6 +65,7 @@ export default function EditBotScreen() {
         temperature,
         max_tokens: maxTokens,
       });
+      await createVersion(id);
       Alert.alert('Salvo!', 'Bot atualizado com sucesso.');
       router.back();
     } catch (error: any) {
@@ -83,6 +86,14 @@ export default function EditBotScreen() {
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
           headerShadowVisible: false,
+          headerRight: () => (
+            <Pressable
+              onPress={() => router.push(`/bot/${id}/versions`)}
+              style={{ marginRight: 16 }}
+            >
+              <Ionicons name="time-outline" size={24} color={colors.text} />
+            </Pressable>
+          ),
         }}
       />
       <ScrollView

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,19 +12,26 @@ import { router, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeColors } from '@/hooks/useThemeColor';
 import { useBotStore } from '@/stores/botStore';
+import { useTemplateStore } from '@/stores/templateStore';
+import type { BotTemplate } from '@/types';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { DEFAULT_BOT_CONFIG, AI_MODELS, BOT_CATEGORIES } from '@/lib/constants';
 import Colors from '@/constants/Colors';
 
-type Step = 'basics' | 'personality' | 'config' | 'review';
+type Step = 'template' | 'basics' | 'personality' | 'config' | 'review';
 
 export default function CreateBotScreen() {
   const colors = useThemeColors();
   const { createBot } = useBotStore();
-  const [step, setStep] = useState<Step>('basics');
+  const [step, setStep] = useState<Step>('template');
   const [loading, setLoading] = useState(false);
+  const { templates, fetchTemplates } = useTemplateStore();
+
+  useEffect(() => {
+    fetchTemplates();
+  }, []);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -33,13 +40,23 @@ export default function CreateBotScreen() {
   const [model, setModel] = useState(DEFAULT_BOT_CONFIG.model);
   const [category, setCategory] = useState('');
 
-  const steps: Step[] = ['basics', 'personality', 'config', 'review'];
+  const steps: Step[] = ['template', 'basics', 'personality', 'config', 'review'];
   const stepIndex = steps.indexOf(step);
 
   const canNext = () => {
     if (step === 'basics') return name.trim().length > 0;
     if (step === 'personality') return systemPrompt.trim().length > 0;
     return true;
+  };
+
+  /** Templates prefill the wizard; every field stays editable afterwards. */
+  const applyTemplate = (template: BotTemplate) => {
+    setName(template.name);
+    setDescription(template.description);
+    setSystemPrompt(template.system_prompt);
+    setWelcomeMessage(template.welcome_message ?? DEFAULT_BOT_CONFIG.welcome_message);
+    setCategory(template.category ?? '');
+    setStep('basics');
   };
 
   const handleNext = () => {
@@ -106,6 +123,54 @@ export default function CreateBotScreen() {
         </View>
 
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {step === 'template' && (
+            <>
+              <Text style={[styles.stepTitle, { color: colors.text }]}>Comece por aqui</Text>
+              <Text style={[styles.stepDesc, { color: colors.textSecondary }]}>
+                Escolha um modelo pronto ou comece do zero. Tudo continua editavel depois.
+              </Text>
+
+              {templates.map((template) => (
+                <Card
+                  key={template.id}
+                  onPress={() => applyTemplate(template)}
+                  style={styles.templateCard}
+                >
+                  <View style={styles.templateRow}>
+                    <Ionicons name="sparkles" size={20} color={Colors.brand.primary} />
+                    <View style={styles.templateInfo}>
+                      <Text style={[styles.templateName, { color: colors.text }]}>
+                        {template.name}
+                      </Text>
+                      <Text
+                        style={[styles.templateDesc, { color: colors.textSecondary }]}
+                        numberOfLines={2}
+                      >
+                        {template.description}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                  </View>
+                </Card>
+              ))}
+
+              <Card onPress={() => setStep('basics')} style={styles.templateCard}>
+                <View style={styles.templateRow}>
+                  <Ionicons name="add-circle-outline" size={20} color={colors.textSecondary} />
+                  <View style={styles.templateInfo}>
+                    <Text style={[styles.templateName, { color: colors.text }]}>
+                      Comecar do zero
+                    </Text>
+                    <Text style={[styles.templateDesc, { color: colors.textSecondary }]}>
+                      Escrever as instrucoes por conta propria
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                </View>
+              </Card>
+            </>
+          )}
+
           {step === 'basics' && (
             <>
               <Text style={[styles.stepTitle, { color: colors.text }]}>Informacoes Basicas</Text>
@@ -238,11 +303,12 @@ export default function CreateBotScreen() {
 
         <View style={[styles.footer, { borderTopColor: colors.border }]}>
           <Button title="Voltar" onPress={handleBack} variant="ghost" />
+          {/* The template step advances by picking a card, so it has no Next. */}
           {step === 'review' ? (
             <Button title="Criar Bot" onPress={handleCreate} loading={loading} />
-          ) : (
+          ) : step !== 'template' ? (
             <Button title="Proximo" onPress={handleNext} disabled={!canNext()} />
-          )}
+          ) : null}
         </View>
       </KeyboardAvoidingView>
     </>
@@ -265,6 +331,11 @@ const styles = StyleSheet.create({
   categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   categoryChip: { paddingVertical: 10, paddingHorizontal: 16 },
   categoryText: { fontSize: 14, fontWeight: '500' },
+  templateCard: { marginBottom: 10 },
+  templateRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  templateInfo: { flex: 1 },
+  templateName: { fontSize: 16, fontWeight: '600' },
+  templateDesc: { fontSize: 13, marginTop: 1 },
   modelCard: { marginBottom: 10 },
   modelRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   modelName: { fontSize: 16, fontWeight: '600' },

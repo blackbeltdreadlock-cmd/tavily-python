@@ -73,6 +73,8 @@ export default function RootLayout() {
           <>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="bot" />
+            <Stack.Screen name="marketplace" />
+            <Stack.Screen name="creator" />
             <Stack.Screen name="settings" />
           </>
         ) : (

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, FlatList, Text } from 'react-native';
-import { useLocalSearchParams, Stack } from 'expo-router';
+import { View, StyleSheet, FlatList, Text, Pressable, ActivityIndicator } from 'react-native';
+import { useLocalSearchParams, Stack, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useThemeColors } from '@/hooks/useThemeColor';
 import { useChatStore } from '@/stores/chatStore';
 import { useBotStore } from '@/stores/botStore';
@@ -14,6 +15,7 @@ export default function ChatScreen() {
   const colors = useThemeColors();
   const flatListRef = useRef<FlatList>(null);
   const [bot, setBot] = useState<Bot | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   const {
     activeConversation,
@@ -21,9 +23,14 @@ export default function ChatScreen() {
     isStreaming,
     streamingContent,
     createConversation,
+    resumeOrCreateConversation,
     sendMessage,
     fetchMessages,
+    loadOlderMessages,
+    hasMoreMessages,
+    loadingOlder,
     setActiveConversation,
+    subscribeToMessages,
   } = useChatStore();
 
   const { fetchBot } = useBotStore();
@@ -33,13 +40,32 @@ export default function ChatScreen() {
       fetchBot(botId).then(setBot);
       initConversation();
     }
-    return () => setActiveConversation(null);
+    return () => {
+      setActiveConversation(null);
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
+    };
   }, [botId]);
 
   const initConversation = async () => {
     if (!botId) return;
+    const conv = await resumeOrCreateConversation(botId);
+    await fetchMessages(conv.id);
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+    }
+    unsubscribeRef.current = subscribeToMessages(conv.id);
+  };
+
+  const handleNewConversation = async () => {
+    if (!botId) return;
     const conv = await createConversation(botId);
     await fetchMessages(conv.id);
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+    }
+    unsubscribeRef.current = subscribeToMessages(conv.id);
   };
 
   const handleSend = async (content: string) => {
@@ -66,6 +92,19 @@ export default function ChatScreen() {
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
           headerShadowVisible: false,
+          headerRight: () => (
+            <View style={styles.headerActions}>
+              <Pressable onPress={handleNewConversation} hitSlop={8}>
+                <Ionicons name="create-outline" size={22} color={colors.text} />
+              </Pressable>
+              <Pressable
+                onPress={() => router.push(`/bot/${botId}/conversations` as any)}
+                hitSlop={8}
+              >
+                <Ionicons name="time-outline" size={22} color={colors.text} />
+              </Pressable>
+            </View>
+          ),
         }}
       />
       <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -91,6 +130,14 @@ export default function ChatScreen() {
           contentContainerStyle={styles.messagesList}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           ListFooterComponent={isStreaming && !streamingContent ? <TypingIndicator /> : null}
+          // Older messages page in when the user reaches the top.
+          onStartReached={hasMoreMessages ? () => loadOlderMessages() : undefined}
+          onStartReachedThreshold={0.2}
+          ListHeaderComponent={
+            loadingOlder ? (
+              <ActivityIndicator style={styles.olderSpinner} color={colors.textSecondary} />
+            ) : null
+          }
         />
 
         <ChatInput onSend={handleSend} disabled={isStreaming} />
@@ -101,7 +148,9 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  headerActions: { flexDirection: 'row', gap: 18, marginRight: 4 },
   messagesList: { paddingVertical: 16 },
+  olderSpinner: { paddingVertical: 12 },
   welcome: { padding: 20, alignItems: 'center' },
   welcomeText: { fontSize: 15, textAlign: 'center', fontStyle: 'italic' },
 });
