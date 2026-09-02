@@ -4,23 +4,25 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './constants';
 
+const isBrowser = typeof localStorage !== 'undefined';
+
 const ExpoSecureStoreAdapter = {
   getItem: (key: string) => {
     if (Platform.OS === 'web') {
-      return localStorage.getItem(key);
+      return isBrowser ? localStorage.getItem(key) : null;
     }
     return SecureStore.getItemAsync(key);
   },
   setItem: (key: string, value: string) => {
     if (Platform.OS === 'web') {
-      localStorage.setItem(key, value);
+      if (isBrowser) localStorage.setItem(key, value);
       return;
     }
     return SecureStore.setItemAsync(key, value);
   },
   removeItem: (key: string) => {
     if (Platform.OS === 'web') {
-      localStorage.removeItem(key);
+      if (isBrowser) localStorage.removeItem(key);
       return;
     }
     return SecureStore.deleteItemAsync(key);
