@@ -1,47 +1,37 @@
-# MyFit Pro
+# MyFit Pro — versão completa do MVP
 
-Aplicativo completo para academia, personal trainers e alunos.
+A aplicação possui frontend React/Vite e API FastAPI com SQLite para desenvolvimento.
 
-## Estrutura
-
-- `myfitpro/frontend`: app web em React + TypeScript + Vite
-- `myfitpro/backend`: API em FastAPI com autenticação JWT
-
-## Como iniciar
-
-### Backend
+## Executar
 
 ```bash
+# API
 cd myfitpro/backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 uvicorn app.main:app --reload --port 8000
-```
 
-### Frontend
-
-```bash
+# Em outro terminal
 cd myfitpro/frontend
 npm install
 npm run dev
 ```
 
-### Acesso
+Frontend: http://localhost:5173  
+Swagger: http://localhost:8000/docs
 
-- Frontend: http://localhost:5173
-- API: http://localhost:8000
-- Swagger: http://localhost:8000/docs
+Credenciais de demonstração: `trainer@myfit.pro` / `123456`.
 
-### Demo
+## Módulos disponíveis
 
-- Email: trainer@myfit.pro
-- Senha: 123456
+- autenticação JWT;
+- dashboard operacional;
+- carteira e cadastro de alunos;
+- fichas de treino;
+- avaliações físicas;
+- agenda;
+- endpoints REST para criação e consulta.
 
-## Próximos passos
-
-- PostgreSQL em produção
-- migrações com Alembic
-- autenticação real por usuário
-- módulos de fichas, avaliações, agenda e financeiro completos
+O banco SQLite é inicializado automaticamente com dados demo. Para produção, configurar PostgreSQL, migrations Alembic, segredo JWT seguro, storage de arquivos, rate limiting e observabilidade.
