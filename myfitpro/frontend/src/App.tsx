@@ -19,6 +19,35 @@ export type Student = {
   created_at: string
 }
 
+export type Workout = {
+  id: number
+  title: string
+  objective: string
+  duration: number
+  exercises: number
+  status: string
+  created_at: string
+}
+
+export type Assessment = {
+  id: number
+  student_name: string
+  date: string
+  weight: number
+  body_fat: number
+  muscle_mass: number
+  status: string
+  progress: number
+}
+
+export type ScheduleItem = {
+  id: number
+  time: string
+  student_name: string
+  workout_type: string
+  status: string
+}
+
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
@@ -64,3 +93,10 @@ export const getMe = (token: string) => request<User>('/api/v1/me', {}, token)
 export const getStudents = (token: string) => request<Student[]>('/api/v1/students', {}, token)
 export const createStudent = (token: string, data: Pick<Student, 'name' | 'email' | 'goal'>) =>
   request<Student>('/api/v1/students', { method: 'POST', body: JSON.stringify(data) }, token)
+
+export const getWorkouts = (token: string) => request<Workout[]>('/api/v1/workouts', {}, token)
+export const createWorkout = (token: string, data: Pick<Workout, 'title' | 'objective' | 'duration' | 'exercises'>) =>
+  request<Workout>('/api/v1/workouts', { method: 'POST', body: JSON.stringify(data) }, token)
+
+export const getAssessments = (token: string) => request<Assessment[]>('/api/v1/assessments', {}, token)
+export const getSchedule = (token: string) => request<ScheduleItem[]>('/api/v1/schedule', {}, token)

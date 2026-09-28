@@ -1,289 +1,650 @@
-:root {
-  --bg: #0a0d12;
-  --panel: #121821;
-  --panel-soft: #171f2a;
-  --panel-strong: #202b39;
-  --line: #2a3644;
-  --text: #eef4ff;
-  --muted: #8a98aa;
-  --orange: #ff7a3d;
-  --orange-soft: rgba(255, 122, 61, 0.12);
-  --green: #10b981;
-  --green-soft: rgba(16, 185, 129, 0.12);
-  --purple: #8b5cf6;
-  --purple-soft: rgba(139, 92, 246, 0.12);
-  --blue: #38bdf8;
-  --blue-soft: rgba(56, 189, 248, 0.12);
-  --danger: #ef4444;
-  --shadow: 0 26px 60px rgba(0,0,0,0.32);
-  --radius: 18px;
+import { FormEvent, useEffect, useMemo, useState } from 'react'
+import {
+  Assessment,
+  ScheduleItem,
+  Student,
+  User,
+  Workout,
+  createStudent,
+  createWorkout,
+  getAssessments,
+  getMe,
+  getSchedule,
+  getStudents,
+  getWorkouts,
+  login,
+} from './api'
+
+type Page = 'inicio' | 'alunos' | 'treinos' | 'avaliacoes' | 'agenda'
+
+type ViewStudent = Student & { progress: number; color: string }
+
+const colors = ['#8b5cf6', '#10b981', '#38bdf8', '#ff7a3d']
+const nav: { id: Page; label: string; icon: string }[] = [
+  { id: 'inicio', label: 'Início', icon: '⌂' },
+  { id: 'alunos', label: 'Alunos', icon: '♙' },
+  { id: 'treinos', label: 'Treinos', icon: '▦' },
+  { id: 'avaliacoes', label: 'Avaliações', icon: '◒' },
+  { id: 'agenda', label: 'Agenda', icon: '□' },
+]
+
+const initials = (name: string) =>
+  name
+    .split(' ')
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase()
+
+const toViewStudent = (student: Student, index: number): ViewStudent => ({
+  ...student,
+  progress: 68 + (index % 4) * 8,
+  color: colors[index % colors.length],
+})
+
+function Brand() {
+  return (
+    <div className="brand">
+      <span className="brand-mark">
+        <i />
+      </span>
+      <span>
+        MyFit <b>Pro</b>
+      </span>
+    </div>
+  )
 }
 
-* { box-sizing: border-box; }
-html, body, #root { margin: 0; min-height: 100%; height: 100%; font-family: Inter, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
-body { min-height: 100vh; }
-button, input, select { font: inherit; }
-button { cursor: pointer; }
-
-.app-shell {
-  display: grid;
-  grid-template-columns: 240px minmax(0,1fr);
-  min-height: 100vh;
-  background: radial-gradient(circle at top, rgba(255,122,61,0.08), transparent 20%), var(--bg);
+function Stat({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: string }) {
+  return (
+    <article className={`stat-card ${tone}`}>
+      <span className="stat-label">{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </article>
+  )
 }
 
-.sidebar {
-  background: rgba(18, 24, 33, 0.92);
-  border-right: 1px solid var(--line);
-  padding: 18px 14px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+function Login({ onSuccess }: { onSuccess: (token: string, user: User) => void }) {
+  const [email, setEmail] = useState('trainer@myfit.pro')
+  const [password, setPassword] = useState('123456')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+
+    try {
+      const auth = await login(email, password)
+      const profile = await getMe(auth.access_token)
+      onSuccess(auth.access_token, profile)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao entrar')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="auth-screen">
+      <form className="auth-card" onSubmit={submit}>
+        <Brand />
+        <p className="eyebrow">Área segura</p>
+        <h1>Entre no MyFit Pro</h1>
+        <p className="subtitle">Gerencie alunos, treinos e resultados em um só lugar.</p>
+
+        <label>
+          E-mail
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        </label>
+
+        <label>
+          Senha
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        </label>
+
+        {error && <p className="error">{error}</p>}
+
+        <button className="button primary full" disabled={loading}>
+          {loading ? 'Entrando...' : 'Entrar'}
+        </button>
+
+        <small className="muted">Demo: trainer@myfit.pro · 123456</small>
+      </form>
+    </div>
+  )
 }
 
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  font-size: 1.1rem;
-}
-.brand-mark {
-  width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
-  background: linear-gradient(135deg, var(--orange), var(--purple));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
-}
-.brand-mark i {
-  width: 12px; height: 12px; border-radius: 4px; display: block; background: rgba(10,13,18,0.92);
-  box-shadow: 0 0 0 2px rgba(10,13,18,0.92);
+function App() {
+  const [token, setToken] = useState<string>(() => localStorage.getItem('myfitpro.token') ?? '')
+  const [user, setUser] = useState<User | null>(null)
+  const [students, setStudents] = useState<ViewStudent[]>([])
+  const [workouts, setWorkouts] = useState<Workout[]>([])
+  const [assessments, setAssessments] = useState<Assessment[]>([])
+  const [schedule, setSchedule] = useState<ScheduleItem[]>([])
+  const [page, setPage] = useState<Page>('inicio')
+  const [selected, setSelected] = useState<ViewStudent | null>(null)
+  const [notice, setNotice] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!token) return
+
+    async function load() {
+      setLoading(true)
+      try {
+        const [profile, listStudents, listWorkouts, listAssessments, listScheduleItems] = await Promise.all([
+          getMe(token),
+          getStudents(token),
+          getWorkouts(token),
+          getAssessments(token),
+          getSchedule(token),
+        ])
+
+        setUser(profile)
+        setStudents(listStudents.map(toViewStudent))
+        setWorkouts(listWorkouts)
+        setAssessments(listAssessments)
+        setSchedule(listScheduleItems)
+      } catch {
+        localStorage.removeItem('myfitpro.token')
+        setToken('')
+        setUser(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    load()
+  }, [token])
+
+  if (!token || !user) {
+    return <Login onSuccess={(value, profile) => { localStorage.setItem('myfitpro.token', value); setToken(value); setUser(profile) }} />
+  }
+
+  const title = useMemo(
+    () => ({
+      inicio: `Bom dia, ${user.name.split(' ')[0]}`,
+      alunos: 'Alunos',
+      treinos: 'Treinos',
+      avaliacoes: 'Avaliações físicas',
+      agenda: 'Agenda',
+    } as Record<Page, string>)[page],
+    [page, user.name],
+  )
+
+  function action(message: string) {
+    setNotice(message)
+    window.setTimeout(() => setNotice(''), 2600)
+  }
+
+  function logout() {
+    localStorage.removeItem('myfitpro.token')
+    setToken('')
+    setUser(null)
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <Brand />
+
+        <div className="workspace">
+          <span className="avatar avatar-orange">{initials(user.name)}</span>
+          <div>
+            <b>{user.name}</b>
+            <small>{user.role === 'trainer' ? 'Personal trainer' : 'Academia'}</small>
+          </div>
+        </div>
+
+        <nav className="main-nav" aria-label="Navegação principal">
+          {nav.map((item) => (
+            <button
+              key={item.id}
+              className={page === item.id ? 'nav-item active' : 'nav-item'}
+              onClick={() => setPage(item.id)}
+            >
+              <span>{item.icon}</span>
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-bottom">
+          <button className="nav-item" onClick={logout}>
+            <span>↪</span>
+            Sair
+          </button>
+          <div className="sidebar-footer">MyFit Pro · API conectada</div>
+        </div>
+      </aside>
+
+      <main className="content">
+        <header className="topbar">
+          <button className="mobile-brand">
+            <Brand />
+          </button>
+          <div className="breadcrumb">
+            Painel <span>/</span> {title}
+          </div>
+          <div className="profile">
+            <span className="avatar avatar-orange">{initials(user.name)}</span>
+            <span>{user.name.split(' ')[0]}</span>
+          </div>
+        </header>
+
+        <div className="page-header">
+          <div>
+            <p className="eyebrow">Segunda-feira, 28 de setembro de 2026</p>
+            <h1>{title}</h1>
+            <p className="subtitle">Resumo operacional da sua rotina e do seu time.</p>
+          </div>
+
+          <button className="button primary" onClick={() => action(page === 'alunos' ? 'Formulário de aluno aberto.' : 'Nova ação registrada.') }>
+            ＋ {page === 'alunos' ? 'Novo aluno' : 'Nova ação'}
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="panel loading">Carregando dados da API...</div>
+        ) : page === 'inicio' ? (
+          <Dashboard students={students} assessments={assessments} schedule={schedule} onSelect={setSelected} onAction={action} />
+        ) : page === 'alunos' ? (
+          <Students
+            students={students}
+            onSelect={setSelected}
+            token={token}
+            onCreate={(student) => setStudents((current) => [toViewStudent(student, current.length), ...current])}
+            onAction={action}
+          />
+        ) : page === 'treinos' ? (
+          <Workouts token={token} workouts={workouts} onCreate={(workout) => setWorkouts((current) => [workout, ...current])} onAction={action} />
+        ) : page === 'avaliacoes' ? (
+          <Assessments assessments={assessments} onAction={action} />
+        ) : (
+          <SchedulePanel schedule={schedule} onAction={action} />
+        )}
+
+        {selected && (
+          <div className="modal-backdrop" onClick={() => setSelected(null)}>
+            <section className="modal" onClick={(event) => event.stopPropagation()}>
+              <button className="modal-close" onClick={() => setSelected(null)}>
+                ×
+              </button>
+
+              <span className="avatar large" style={{ background: selected.color }}>{initials(selected.name)}</span>
+              <p className="eyebrow">Perfil do aluno</p>
+              <h2>{selected.name}</h2>
+              <p className="subtitle">Objetivo: {selected.goal}</p>
+
+              <div className="modal-grid">
+                <div>
+                  <small>Adesão</small>
+                  <strong>{selected.progress}%</strong>
+                </div>
+                <div>
+                  <small>E-mail</small>
+                  <strong>{selected.email}</strong>
+                </div>
+              </div>
+
+              <button className="button primary full" onClick={() => { setSelected(null); action('Plano do aluno aberto.') }}>
+                Ver plano completo
+              </button>
+            </section>
+          </div>
+        )}
+
+        {notice && <div className="toast">✓ {notice}</div>}
+      </main>
+    </div>
+  )
 }
 
-.workspace {
-  display: flex; align-items: center; gap: 10px; padding: 12px 10px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,0.01);
-}
-.workspace b { display: block; font-size: 0.9rem; }
-.workspace small { color: var(--muted); }
-.avatar {
-  display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 12px; font-size: 0.75rem; font-weight: 800; color: white; background: linear-gradient(135deg, var(--orange), var(--purple));
-}
-.avatar.small { width: 28px; height: 28px; border-radius: 10px; font-size: 0.66rem; }
-.avatar.large { width: 60px; height: 60px; border-radius: 16px; font-size: 1.1rem; }
+function Dashboard({ students, assessments, schedule, onSelect, onAction }: { students: ViewStudent[]; assessments: Assessment[]; schedule: ScheduleItem[]; onSelect: (student: ViewStudent) => void; onAction: (message: string) => void }) {
+  const averageProgress = students.length
+    ? Math.round(students.reduce((total, student) => total + student.progress, 0) / students.length)
+    : 0
 
-.main-nav {
-  display: flex; flex-direction: column; gap: 8px;
-}
-.nav-item {
-  width: 100%; border: 0; background: transparent; color: var(--muted); display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; text-align: left; font-weight: 600;
-}
-.nav-item:hover, .nav-item.active { background: var(--panel-soft); color: var(--text); }
-.nav-item span { width: 18px; display: inline-block; text-align: center; }
-.sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
-.sidebar-footer { color: var(--muted); font-size: 0.75rem; padding: 12px 6px 0; }
+  return (
+    <>
+      <section className="stats-grid">
+        <Stat label="Alunos ativos" value={String(students.length)} detail="Carteira atual" tone="orange" />
+        <Stat label="Treinos esta semana" value="87" detail="↑ 8% vs. última semana" tone="green" />
+        <Stat label="Receita mensal" value="R$ 8.420" detail="3 pagamentos pendentes" tone="purple" />
+        <Stat label="Adesão média" value={`${averageProgress}%`} detail="Resultado de performance" tone="blue" />
+      </section>
 
-.content {
-  padding: 24px 24px 40px; min-width: 0;
-}
-.topbar {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--line);
-}
-.mobile-brand { display: none; }
-.breadcrumb { color: var(--muted); font-size: 0.8rem; }
-.breadcrumb span { margin: 0 10px; }
-.profile { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 12px; }
+      <section className="dashboard-grid">
+        <div className="panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Acompanhamento</p>
+              <h2>Alunos em destaque</h2>
+            </div>
+            <button className="text-button" onClick={() => onAction('Lista aberta.')}>Ver todos →</button>
+          </div>
 
-.page-header {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 20px 0 24px;
-}
-.page-header h1 {
-  margin: 8px 0 10px; font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -0.05em;
-}
-.eyebrow { margin: 0; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; font-size: 0.72rem; font-weight: 700; }
-.subtitle { margin: 0; color: var(--muted); }
+          <div className="student-list">
+            {students.map((student) => (
+              <button key={student.id} className="student-row" onClick={() => onSelect(student)}>
+                <span className="avatar" style={{ background: student.color }}>{initials(student.name)}</span>
+                <span className="student-info">
+                  <b>{student.name}</b>
+                  <small>{student.goal}</small>
+                </span>
+                <span className="progress-wrap">
+                  <span className="progress-label">{student.progress}%</span>
+                  <span className="progress">
+                    <i style={{ width: `${student.progress}%` }} />
+                  </span>
+                </span>
+                <span className="row-arrow">→</span>
+              </button>
+            ))}
+          </div>
+        </div>
 
-.button {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 12px; border: 1px solid transparent; padding: 11px 18px; font-weight: 700; background: transparent; color: var(--text);
-}
-.button.primary { background: linear-gradient(135deg, var(--orange), #ff8e5b); color: #180f09; }
-.button.ghost { border-color: var(--line); color: var(--text); background: rgba(255,255,255,0.01); }
-.button.full { width: 100%; }
+        <div className="panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Hoje</p>
+              <h2>Próximos horários</h2>
+            </div>
+            <button className="icon-button small" onClick={() => onAction('Agenda aberta.')}>＋</button>
+          </div>
 
-.stats-grid {
-  display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; margin-bottom: 22px;
-}
-.stat-card {
-  padding: 18px 18px 16px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow);
-}
-.stat-card.orange { border-top: 2px solid var(--orange); }
-.stat-card.green { border-top: 2px solid var(--green); }
-.stat-card.purple { border-top: 2px solid var(--purple); }
-.stat-card.blue { border-top: 2px solid var(--blue); }
-.stat-label { display: block; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; }
-.stat-card strong { display: block; font-size: clamp(1.4rem, 3vw, 2.3rem); margin: 10px 0 6px; letter-spacing: -0.05em; }
-.stat-card small { color: var(--muted); }
+          <div className="schedule-list">
+            {schedule.slice(0, 3).map((item) => (
+              <div key={item.id} className="schedule-item">
+                <strong>{item.time}</strong>
+                <span className="avatar small" style={{ background: colors[item.id % colors.length] }}>{initials(item.student_name)}</span>
+                <span>
+                  <b>{item.student_name}</b>
+                  <small>{item.workout_type}</small>
+                </span>
+                <i>{item.status === 'Confirmado' ? '✓' : '•'}</i>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-.dashboard-grid {
-  display: grid; grid-template-columns: minmax(0,1.35fr) minmax(280px,0.95fr);
-  gap: 18px;
-  margin-bottom: 18px;
-}
-.panel {
-  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow);
-}
-.panel-heading {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px;
-}
-.panel-heading h2 { margin: 6px 0 0; font-size: 1.1rem; }
-.text-button { padding: 0; border: 0; background: transparent; color: var(--orange); font-weight: 700; }
-.student-list { display: flex; flex-direction: column; gap: 10px; }
-.student-row {
-  width: 100%; display: grid; grid-template-columns: auto minmax(0,1.2fr) minmax(120px, 0.8fr) auto; align-items: center; gap: 12px; background: rgba(255,255,255,0.012); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; text-align: left; color: var(--text);
-}
-.student-info { display: flex; flex-direction: column; min-width: 0; }
-.student-info b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.student-info small { color: var(--muted); }
-.progress-wrap { display: flex; flex-direction: column; gap: 6px; }
-.progress-label { font-size: 0.75rem; color: var(--muted); }
-.progress { display: block; width: 100%; height: 7px; border-radius: 999px; background: rgba(255,255,255,0.06); overflow: hidden; }
-.progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--orange), var(--green)); }
-.row-arrow { color: var(--muted); }
+      <section className="panel chart-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Performance</p>
+            <h2>Volume de treino</h2>
+          </div>
+          <select aria-label="Período">
+            <option>Últimos 30 dias</option>
+            <option>Últimos 90 dias</option>
+          </select>
+        </div>
 
-.schedule-list { display: flex; flex-direction: column; gap: 12px; }
-.schedule-item {
-  display: grid; grid-template-columns: 56px auto minmax(0,1fr) auto; align-items: center; gap: 10px; background: rgba(255,255,255,0.02); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
-}
-.schedule-item strong { color: var(--orange); }
-.schedule-item span { display: flex; flex-direction: column; gap: 2px; }
-.schedule-item small { color: var(--muted); }
-.icon-button { border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 10px; width: 32px; height: 32px; }
-.icon-button.small { width: 28px; height: 28px; font-size: 0.9rem; }
-
-.chart-panel { margin-bottom: 18px; }
-.chart-placeholder {
-  min-height: 190px; display: grid; place-items: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 12px; background: rgba(255,255,255,0.01);
+        <div className="chart-placeholder">
+          <span>Dados de volume disponíveis em integração do módulo de sessões.</span>
+        </div>
+      </section>
+    </>
+  )
 }
 
-.create-panel { margin-bottom: 18px; }
-.student-form {
-  display: grid; grid-template-columns: 1.3fr 1.1fr 0.9fr auto; gap: 10px; margin-top: 16px;
-}
-.student-form input, .student-form select, .search input {
-  background: rgba(255,255,255,0.02); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; outline: none;
-}
-.student-form input:focus, .student-form select:focus { border-color: var(--orange); }
-.table-panel { padding: 0; overflow: hidden; }
-.toolbar {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,0.01);
-}
-.search {
-  flex: 1; display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; background: rgba(255,255,255,0.01);
-}
-.search input { flex: 1; border: 0; background: transparent; }
-.table-wrap { overflow: auto; }
-table { width: 100%; border-collapse: collapse; }
-th, td { padding: 14px 16px; border-bottom: 1px solid var(--line); }
-th { text-align: left; color: var(--muted); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; }
-tbody tr { cursor: pointer; }
-tbody tr:hover { background: rgba(255,255,255,0.02); }
-.table-person { display: inline-flex; align-items: center; gap: 10px; }
-.status { display: inline-flex; align-items: center; justify-content: center; padding: 6px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; }
-.active-status { background: var(--green-soft); color: var(--green); }
+function Students({
+  students,
+  onSelect,
+  token,
+  onCreate,
+  onAction,
+}: {
+  students: ViewStudent[]
+  onSelect: (student: ViewStudent) => void
+  token: string
+  onCreate: (student: Student) => void
+  onAction: (message: string) => void
+}) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [goal, setGoal] = useState('Condicionamento')
+  const [error, setError] = useState('')
 
-.cards-grid {
-  display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 18px;
-}
-.workout-card {
-  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 12px; min-height: 220px;
-}
-.workout-card h2 { margin: 0; font-size: 1.2rem; }
-.workout-card p { margin: 0; color: var(--muted); }
-.workout-icon { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; font-size: 1.4rem; }
-.workout-icon.c0 { background: var(--orange-soft); color: var(--orange); }
-.workout-icon.c1 { background: var(--purple-soft); color: var(--purple); }
-.workout-icon.c2 { background: var(--green-soft); color: var(--green); }
-.pill { display: inline-flex; align-items: center; padding: 6px 8px; background: rgba(255,255,255,0.035); color: var(--muted); border-radius: 999px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
-.workout-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 0.8rem; }
-.add-card { align-items: center; justify-content: center; text-align: center; border-style: dashed; }
-.add-plus { font-size: 2rem; color: var(--orange); }
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setError('')
 
-.assessment-layout {
-  display: grid; grid-template-columns: minmax(0,1.5fr) minmax(260px,0.8fr); gap: 18px;
-}
-.metric-highlight {
-  min-height: 170px; display: grid; place-items: center; gap: 8px; text-align: center; background: rgba(255,255,255,0.02); border: 1px dashed var(--line); border-radius: 12px; padding: 18px;
-}
-.metric-highlight strong { font-size: 3rem; letter-spacing: -0.06em; }
-.metric-highlight span { color: var(--muted); }
-.metric-highlight small { color: var(--muted); }
-.insights { display: flex; flex-direction: column; gap: 12px; }
-.insights > div { display: flex; justify-content: space-between; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line); }
-.orange-text { color: var(--orange); }
+    try {
+      const student = await createStudent(token, { name, email, goal })
+      onCreate(student)
+      setName('')
+      setEmail('')
+      setGoal('Condicionamento')
+      onAction('Aluno criado com sucesso.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível criar o aluno')
+    }
+  }
 
-.calendar-panel { padding: 18px; }
-.calendar-header {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px;
-}
-.calendar-grid {
-  display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 8px;
-}
-.calendar-grid b { display: block; text-align: center; color: var(--muted); font-size: 0.74rem; padding-bottom: 6px; }
-.calendar-day {
-  border: 1px solid var(--line); border-radius: 10px; background: transparent; color: var(--text); height: 42px; font-weight: 700;
-}
-.calendar-day.today { background: var(--orange-soft); border-color: var(--orange); color: var(--orange); }
+  return (
+    <>
+      <section className="panel create-panel">
+        <p className="eyebrow">Carteira conectada</p>
+        <h2>Adicionar aluno</h2>
 
-.modal-backdrop {
-  position: fixed; inset: 0; background: rgba(5, 8, 12, 0.75); display: grid; place-items: center; padding: 20px; z-index: 30;
-}
-.modal {
-  width: min(560px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 22px; position: relative; box-shadow: var(--shadow);
-}
-.modal-close { position: absolute; right: 14px; top: 14px; width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--text); }
-.modal-grid {
-  display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; margin: 18px 0 20px;
-}
-.modal-grid div {
-  background: rgba(255,255,255,0.02); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 6px;
-}
-.modal-grid small { color: var(--muted); }
-.modal-grid strong { font-size: 1.1rem; }
+        <form className="student-form" onSubmit={submit}>
+          <input placeholder="Nome completo" value={name} onChange={(e) => setName(e.target.value)} required />
+          <input type="email" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <select value={goal} onChange={(e) => setGoal(e.target.value)}>
+            <option>Condicionamento</option>
+            <option>Hipertrofia</option>
+            <option>Emagrecimento</option>
+            <option>Longevidade</option>
+          </select>
+          <button className="button primary">Adicionar</button>
+        </form>
 
-.toast {
-  position: fixed; right: 24px; bottom: 24px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16,185,129,0.5); color: #d7ffef; border-radius: 12px; padding: 12px 16px; box-shadow: var(--shadow); z-index: 40;
-}
+        {error && <p className="error">{error}</p>}
+      </section>
 
-.auth-screen {
-  min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at top, rgba(255,122,61,0.1), transparent 20%), var(--bg);
-}
-.auth-card {
-  width: min(420px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 24px; padding: 24px; box-shadow: var(--shadow);
-  display: flex; flex-direction: column; gap: 16px;
-}
-.auth-card h1 { margin: 0; font-size: clamp(2rem, 4vw, 2.4rem); letter-spacing: -0.05em; }
-.auth-card label {
-  display: flex; flex-direction: column; gap: 8px; color: var(--muted); font-weight: 600; font-size: 0.85rem;
-}
-.auth-card input {
-  background: rgba(255,255,255,0.02); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; outline: none;
-}
-.auth-card input:focus { border-color: var(--orange); }
-.error { margin: 0; color: #ffb4b4; font-size: 0.9rem; }
-.muted { color: var(--muted); }
-.loading { min-height: 180px; display: grid; place-items: center; color: var(--muted); }
+      <section className="panel table-panel">
+        <div className="toolbar">
+          <div className="search">
+            ⌕
+            <input placeholder="Buscar aluno..." />
+          </div>
+          <button className="button ghost" onClick={() => onAction('Lista atualizada.')}>Atualizar</button>
+        </div>
 
-@media (max-width: 980px) {
-  .app-shell { grid-template-columns: 1fr; }
-  .sidebar { display: none; }
-  .content { padding: 18px 16px 32px; }
-  .stats-grid, .cards-grid, .assessment-layout { grid-template-columns: 1fr 1fr; }
-  .dashboard-grid { grid-template-columns: 1fr; }
-  .student-form { grid-template-columns: 1fr; }
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Aluno</th>
+                <th>Objetivo</th>
+                <th>E-mail</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {students.map((student) => (
+                <tr key={student.id} onClick={() => onSelect(student)}>
+                  <td>
+                    <span className="table-person">
+                      <span className="avatar small" style={{ background: student.color }}>{initials(student.name)}</span>
+                      <b>{student.name}</b>
+                    </span>
+                  </td>
+                  <td>{student.goal}</td>
+                  <td>{student.email}</td>
+                  <td>
+                    <span className="status active-status">{student.active ? 'Ativo' : 'Inativo'}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </>
+  )
 }
 
-@media (max-width: 640px) {
-  .stats-grid, .cards-grid, .assessment-layout { grid-template-columns: 1fr; }
-  .page-header { flex-direction: column; align-items: flex-start; }
-  .topbar { flex-wrap: wrap; }
-  .mobile-brand { display: inline-flex; }
-  .breadcrumb { display: none; }
+function Workouts({ token, workouts, onCreate, onAction }: { token: string; workouts: Workout[]; onCreate: (workout: Workout) => void; onAction: (message: string) => void }) {
+  const [title, setTitle] = useState('')
+  const [objective, setObjective] = useState('Hipertrofia')
+  const [duration, setDuration] = useState(45)
+  const [exercises, setExercises] = useState(8)
+  const [error, setError] = useState('')
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setError('')
+
+    try {
+      const newWorkout = await createWorkout(token, { title, objective, duration, exercises })
+      onCreate(newWorkout)
+      setTitle('')
+      setObjective('Hipertrofia')
+      setDuration(45)
+      setExercises(8)
+      onAction('Ficha criada com sucesso.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível criar a ficha')
+    }
+  }
+
+  return (
+    <>
+      <section className="panel create-panel">
+        <p className="eyebrow">Planejamento</p>
+        <h2>Nova ficha de treino</h2>
+
+        <form className="student-form" onSubmit={submit}>
+          <input placeholder="Nome da ficha" value={title} onChange={(e) => setTitle(e.target.value)} required />
+          <select value={objective} onChange={(e) => setObjective(e.target.value)}>
+            <option>Hipertrofia</option>
+            <option>Emagrecimento</option>
+            <option>Força</option>
+            <option>Definição</option>
+            <option>Longevidade</option>
+          </select>
+          <input type="number" value={duration} min={20} onChange={(e) => setDuration(Number(e.target.value))} />
+          <button className="button primary">Salvar</button>
+        </form>
+
+        {error && <p className="error">{error}</p>}
+      </section>
+
+      <section className="cards-grid">
+        {workouts.map((workout, index) => (
+          <article className="workout-card" key={workout.id}>
+            <div className={`workout-icon c${index % 3}`}>▦</div>
+            <span className="pill">Treino {String.fromCharCode(65 + index)}</span>
+            <h2>{workout.title}</h2>
+            <p>{workout.objective}</p>
+            <div className="workout-meta">
+              <span>▦ {workout.exercises} exercícios</span>
+              <span>◷ {workout.duration} min</span>
+            </div>
+            <button className="button ghost full" onClick={() => onAction(`Ficha ${workout.title} aberta.`)}>Editar ficha</button>
+          </article>
+        ))}
+
+        <article className="workout-card add-card" onClick={() => onAction('Criador de ficha aberto.') }>
+          <span className="add-plus">＋</span>
+          <h2>Nova ficha</h2>
+          <p>Monte um plano personalizado.</p>
+        </article>
+      </section>
+    </>
+  )
 }
+
+function Assessments({ assessments, onAction }: { assessments: Assessment[]; onAction: (message: string) => void }) {
+  return (
+    <section className="assessment-layout">
+      <div className="panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Composição corporal</p>
+            <h2>Evolução média</h2>
+          </div>
+          <button className="button ghost" onClick={() => onAction('Nova avaliação aberta.')}>＋ Registrar</button>
+        </div>
+
+        <div className="metric-list">
+          {assessments.map((item) => (
+            <div key={item.id} className="metric-row">
+              <div>
+                <b>{item.student_name}</b>
+                <small>{item.date}</small>
+              </div>
+              <div className="metric-values">
+                <span>{item.progress}%</span>
+                <strong>{item.status}</strong>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="panel insights">
+        <p className="eyebrow">Resumo</p>
+        <h2>Indicadores importantes</h2>
+
+        <div>
+          <span>Alunos com progresso</span>
+          <b>{assessments.length}</b>
+        </div>
+        <div>
+          <span>Reavaliações pendentes</span>
+          <b className="orange-text">3</b>
+        </div>
+
+        <button className="button primary full" onClick={() => onAction('Relatório gerado.')}>Gerar relatório</button>
+      </div>
+    </section>
+  )
+}
+
+function SchedulePanel({ schedule, onAction }: { schedule: ScheduleItem[]; onAction: (message: string) => void }) {
+  return (
+    <section className="panel calendar-panel">
+      <div className="calendar-header">
+        <button className="icon-button">‹</button>
+        <h2>Agenda</h2>
+        <button className="icon-button">›</button>
+        <button className="button primary" onClick={() => onAction('Novo atendimento agendado.')}>＋ Agendar horário</button>
+      </div>
+
+      <div className="calendar-grid">
+        {['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'].map((day) => (
+          <b key={day}>{day}</b>
+        ))}
+
+        {Array.from({ length: 30 }, (_, idx) => (
+          <button className={idx === 27 ? 'calendar-day today' : 'calendar-day'} key={idx}>
+            {idx + 1}
+          </button>
+        ))}
+      </div>
+
+      <div className="schedule-list margin-top">
+        {schedule.map((item) => (
+          <div key={item.id} className="schedule-item">
+            <strong>{item.time}</strong>
+            <span className="avatar small" style={{ background: colors[item.id % colors.length] }}>{initials(item.student_name)}</span>
+            <span>
+              <b>{item.student_name}</b>
+              <small>{item.workout_type}</small>
+            </span>
+            <i>{item.status}</i>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+export default App
