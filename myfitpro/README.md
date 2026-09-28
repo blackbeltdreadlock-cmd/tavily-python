@@ -1,10 +1,15 @@
 # MyFit Pro
 
-Aplicativo real em evolução para academias, personal trainers e alunos.
+Aplicativo completo para academia, personal trainers e alunos.
 
-## Executar
+## Estrutura
 
-Terminal 1 — API:
+- `myfitpro/frontend`: app web em React + TypeScript + Vite
+- `myfitpro/backend`: API em FastAPI com autenticação JWT
+
+## Como iniciar
+
+### Backend
 
 ```bash
 cd myfitpro/backend
@@ -15,7 +20,7 @@ cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
 
-Terminal 2 — frontend:
+### Frontend
 
 ```bash
 cd myfitpro/frontend
@@ -23,7 +28,20 @@ npm install
 npm run dev
 ```
 
-- Frontend: http://localhost:5173
-- API e Swagger: http://localhost:8000/docs
+### Acesso
 
-O frontend usa JWT, carrega o usuário e a carteira de alunos pela API e permite cadastrar novos alunos. O SQLite é adequado somente para desenvolvimento; a próxima migração deve usar PostgreSQL, migrations e gestão de segredos em produção.
+- Frontend: http://localhost:5173
+- API: http://localhost:8000
+- Swagger: http://localhost:8000/docs
+
+### Demo
+
+- Email: trainer@myfit.pro
+- Senha: 123456
+
+## Próximos passos
+
+- PostgreSQL em produção
+- migrações com Alembic
+- autenticação real por usuário
+- módulos de fichas, avaliações, agenda e financeiro completos

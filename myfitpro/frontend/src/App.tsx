@@ -1,20 +1,66 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { createStudent, getMe, getStudents, login, Student, User } from './api'
+export type User = {
+  id: number
+  name: string
+  email: string
+  role: 'academy' | 'trainer' | 'student'
+  created_at: string
+}
 
-type Page='inicio'|'alunos'|'treinos'|'avaliacoes'|'agenda'
-const colors=['#8b5cf6','#10b981','#38bdf8','#ff6b35']
-const nav:{id:Page;label:string;icon:string}[]=[['inicio','Início','⌂'],['alunos','Alunos','♙'],['treinos','Treinos','▦'],['avaliacoes','Avaliações','◒'],['agenda','Agenda','□']].map(([id,label,icon])=>({id:id as Page,label,icon}))
-type ViewStudent=Student&{progress:number;color:string}
-const initials=(name:string)=>name.split(' ').slice(0,2).map(x=>x[0]).join('').toUpperCase()
-const viewStudent=(s:Student,i:number):ViewStudent=>({...s,progress:Math.max(45,92-i*9),color:colors[i%colors.length]})
-function Brand(){return <div className="brand"><span className="brand-mark"><i/></span><span>MyFit <b>Pro</b></span></div>}
-function Stat({label,value,detail,tone}:{label:string;value:string;detail:string;tone:string}){return <article className={`stat-card ${tone}`}><span className="stat-label">{label}</span><strong>{value}</strong><small>{detail}</small></article>}
-function Login({onSuccess}:{onSuccess:(token:string,user:User)=>void}){const[email,setEmail]=useState('trainer@myfit.pro'),[password,setPassword]=useState('123456'),[error,setError]=useState(''),[loading,setLoading]=useState(false);async function submit(e:FormEvent){e.preventDefault();setLoading(true);setError('');try{const auth=await login(email,password);onSuccess(auth.access_token,await getMe(auth.access_token))}catch(err){setError(err instanceof Error?err.message:'Falha ao entrar')}finally{setLoading(false)}}return <div className="auth-screen"><form className="auth-card" onSubmit={submit}><Brand/><p className="eyebrow">Área segura</p><h1>Entre no MyFit Pro</h1><p className="subtitle">Acesse alunos, treinos e indicadores.</p><label>E-mail<input type="email" value={email} onChange={e=>setEmail(e.target.value)} required/></label><label>Senha<input type="password" value={password} onChange={e=>setPassword(e.target.value)} required/></label>{error&&<p className="error">{error}</p>}<button className="button primary full" disabled={loading}>{loading?'Entrando...':'Entrar'}</button><small className="muted">Demo: trainer@myfit.pro · 123456</small></form></div>}
-function App(){const[token,setToken]=useState(()=>localStorage.getItem('myfitpro.token')??''),[user,setUser]=useState<User|null>(null),[students,setStudents]=useState<ViewStudent[]>([]),[page,setPage]=useState<Page>('inicio'),[selected,setSelected]=useState<ViewStudent|null>(null),[notice,setNotice]=useState(''),[loading,setLoading]=useState(false);useEffect(()=>{if(!token)return;setLoading(true);getMe(token).then(setUser).then(()=>getStudents(token)).then(items=>setStudents(items.map(viewStudent))).catch(()=>{localStorage.removeItem('myfitpro.token');setToken('');setUser(null)}).finally(()=>setLoading(false))},[token]);if(!token||!user)return <Login onSuccess={(t,u)=>{localStorage.setItem('myfitpro.token',t);setToken(t);setUser(u)}}/>;const title=useMemo(()=>({inicio:`Bom dia, ${user.name.split(' ')[0]}`,alunos:'Alunos',treinos:'Treinos',avaliacoes:'Avaliações físicas',agenda:'Agenda'} as Record<Page,string>)[page],[page,user.name]);const action=(message:string)=>{setNotice(message);window.setTimeout(()=>setNotice(''),2600)};const logout=()=>{localStorage.removeItem('myfitpro.token');setToken('');setUser(null)};return <div className="app-shell"><aside className="sidebar"><Brand/><div className="workspace"><span className="avatar avatar-orange">{initials(user.name)}</span><div><b>{user.name}</b><small>{user.role==='trainer'?'Personal trainer':'Academia'}</small></div></div><nav className="main-nav">{nav.map(item=><button key={item.id} className={page===item.id?'nav-item active':'nav-item'} onClick={()=>setPage(item.id)}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="sidebar-bottom"><button className="nav-item" onClick={logout}><span>↪</span>Sair</button><div className="sidebar-footer">MyFit Pro · API conectada</div></div></aside><main className="content"><header className="topbar"><button className="mobile-brand"><Brand/></button><div className="breadcrumb">Painel <span>/</span> {title}</div><div className="profile"><span className="avatar avatar-orange">{initials(user.name)}</span><span>{user.name.split(' ')[0]}</span></div></header><div className="page-header"><div><p className="eyebrow">MyFit Pro · Gestão inteligente</p><h1>{title}</h1><p className="subtitle">Gerencie sua rotina e acompanhe resultados.</p></div><button className="button primary" onClick={()=>action(page==='alunos'?'Use o formulário para adicionar um aluno.':'Ação registrada.')}>＋ {page==='alunos'?'Novo aluno':'Nova ação'}</button></div>{loading?<div className="panel loading">Carregando dados da API...</div>:page==='inicio'?<Dashboard students={students} select={setSelected} action={action}/>:page==='alunos'?<Students students={students} select={setSelected} token={token} created={s=>setStudents(current=>[...current,viewStudent(s,current.length)])} action={action}/>:page==='treinos'?<Cards title="Fichas de treino" items={['Peito & Tríceps','Costas & Bíceps','Pernas & Ombros']} action={action}/>:page==='avaliacoes'?<Assessments action={action}/>:<Schedule action={action}/>} {selected&&<div className="modal-backdrop" onClick={()=>setSelected(null)}><section className="modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={()=>setSelected(null)}>×</button><span className="avatar large" style={{background:selected.color}}>{initials(selected.name)}</span><p className="eyebrow">Perfil do aluno</p><h2>{selected.name}</h2><p className="subtitle">Objetivo: {selected.goal}</p><div className="modal-grid"><div><small>Adesão</small><strong>{selected.progress}%</strong></div><div><small>E-mail</small><strong>{selected.email}</strong></div></div><button className="button primary full" onClick={()=>{setSelected(null);action('Aluno selecionado.')}}>Ver plano completo</button></section></div>}{notice&&<div className="toast">✓ {notice}</div>}</main></div>}
-function Dashboard({students,select,action}:{students:ViewStudent[];select:(s:ViewStudent)=>void;action:(m:string)=>void}){return <><section className="stats-grid"><Stat label="Alunos ativos" value={String(students.length)} detail="Dados da API" tone="orange"/><Stat label="Treinos esta semana" value="87" detail="↑ 8% na semana" tone="green"/><Stat label="Receita mensal" value="R$ 8.420" detail="3 pendentes" tone="purple"/><Stat label="Adesão média" value={students.length?`${Math.round(students.reduce((a,s)=>a+s.progress,0)/students.length)}%`:'—'} detail="Estimativa da carteira" tone="blue"/></section><section className="dashboard-grid"><div className="panel"><div className="panel-heading"><div><p className="eyebrow">Acompanhamento</p><h2>Alunos em destaque</h2></div><button className="text-button" onClick={()=>action('Lista de alunos aberta.')}>Ver todos →</button></div><div className="student-list">{students.map(s=><button className="student-row" key={s.id} onClick={()=>select(s)}><span className="avatar" style={{background:s.color}}>{initials(s.name)}</span><span className="student-info"><b>{s.name}</b><small>{s.goal} · {s.email}</small></span><span className="progress-wrap"><span className="progress-label">{s.progress}%</span><span className="progress"><i style={{width:`${s.progress}%`}}/></span></span><span className="row-arrow">→</span></button>)||<p className="muted">Nenhum aluno cadastrado.</p>}</div></div><div className="panel"><div className="panel-heading"><div><p className="eyebrow">Hoje</p><h2>Próximos horários</h2></div><button className="icon-button small" onClick={()=>action('Novo horário criado.')}>＋</button></div><div className="schedule-list"><ScheduleItem time="07:00" name={students[0]?.name??'Sem aluno'} color={students[0]?.color??'#8b5cf6'}/><ScheduleItem time="18:30" name={students[1]?.name??'Agenda livre'} color={students[1]?.color??'#10b981'}/></div><button className="button ghost full" onClick={()=>action('Agenda aberta.')}>Ver agenda completa</button></div></section><section className="panel chart-panel"><div className="panel-heading"><div><p className="eyebrow">Performance</p><h2>Volume de treino</h2></div><select aria-label="Período"><option>Últimos 30 dias</option><option>Últimos 90 dias</option></select></div><div className="chart-placeholder"><span>Dados de volume serão carregados pelo módulo de sessões.</span></div></section></>}
-function ScheduleItem({time,name,color}:{time:string;name:string;color:string}){return <div className="schedule-item"><strong>{time}</strong><span className="avatar small" style={{background:color}}>{initials(name)}</span><span><b>{name}</b><small>Atendimento</small></span><i>⋮</i></div>}
-function Students({students,select,token,created,action}:{students:ViewStudent[];select:(s:ViewStudent)=>void;token:string;created:(s:Student)=>void;action:(m:string)=>void}){const[name,setName]=useState(''),[email,setEmail]=useState(''),[goal,setGoal]=useState('Condicionamento'),[error,setError]=useState('');async function submit(e:FormEvent){e.preventDefault();try{const s=await createStudent(token,{name,email,goal});created(s);setName('');setEmail('');setError('');action('Aluno criado com sucesso.')}catch(err){setError(err instanceof Error?err.message:'Não foi possível criar o aluno')}}return <><section className="panel create-panel"><p className="eyebrow">Carteira conectada</p><h2>Adicionar aluno</h2><form className="student-form" onSubmit={submit}><input placeholder="Nome completo" value={name} onChange={e=>setName(e.target.value)} required/><input type="email" placeholder="E-mail" value={email} onChange={e=>setEmail(e.target.value)} required/><select value={goal} onChange={e=>setGoal(e.target.value)}><option>Condicionamento</option><option>Hipertrofia</option><option>Emagrecimento</option><option>Longevidade</option></select><button className="button primary">Adicionar</button></form>{error&&<p className="error">{error}</p>}</section><section className="panel table-panel"><div className="toolbar"><div className="search">⌕<input placeholder="Buscar aluno..."/></div><button className="button ghost" onClick={()=>action('Lista atualizada.')}>Atualizar</button></div><div className="table-wrap"><table><thead><tr><th>Aluno</th><th>Objetivo</th><th>E-mail</th><th>Status</th></tr></thead><tbody>{students.map(s=><tr key={s.id} onClick={()=>select(s)}><td><span className="table-person"><span className="avatar small" style={{background:s.color}}>{initials(s.name)}</span><b>{s.name}</b></span></td><td>{s.goal}</td><td>{s.email}</td><td><span className="status active-status">{s.active?'Ativo':'Inativo'}</span></td></tr>)}</tbody></table></div></section></>}
-function Cards({title,items,action}:{title:string;items:string[];action:(m:string)=>void}){return <section className="cards-grid">{items.map((item,i)=><article className="workout-card" key={item}><div className={`workout-icon c${i}`}>▦</div><span className="pill">TREINO {String.fromCharCode(65+i)}</span><h2>{item}</h2><p>{title} prontas para personalizar.</p><div className="workout-meta"><span>▦ 8 exercícios</span><span>◷ 45 min</span></div><button className="button ghost full" onClick={()=>action(`Ficha ${item} aberta.`)}>Editar ficha</button></article>)}<article className="workout-card add-card" onClick={()=>action('Criador de ficha aberto.')}><span className="add-plus">＋</span><h2>Nova ficha</h2><p>Monte um treino personalizado.</p></article></section>}
-function Assessments({action}:{action:(m:string)=>void}){return <section className="assessment-layout"><div className="panel"><div className="panel-heading"><div><p className="eyebrow">Composição corporal</p><h2>Evolução média</h2></div><button className="button ghost" onClick={()=>action('Nova avaliação aberta.')}>＋ Registrar</button></div><div className="metric-highlight"><strong>—</strong><span>aguardando avaliações reais</span><small>Conecte o módulo de avaliações para visualizar</small></div></div><div className="panel insights"><p className="eyebrow">Resumo</p><h2>Indicadores importantes</h2><div><span>Alunos cadastrados</span><b>API</b></div><div><span>Reavaliações pendentes</span><b className="orange-text">—</b></div><button className="button primary full" onClick={()=>action('Relatório preparado.')}>Gerar relatório</button></div></section>}
-function Schedule({action}:{action:(m:string)=>void}){return <section className="panel calendar-panel"><div className="calendar-header"><button className="icon-button">‹</button><h2>Agenda</h2><button className="icon-button">›</button><button className="button primary" onClick={()=>action('Novo atendimento agendado.')}>＋ Agendar horário</button></div><div className="calendar-grid">{['DOM','SEG','TER','QUA','QUI','SEX','SÁB'].map(d=><b key={d}>{d}</b>)}{Array.from({length:30},(_,i)=><button className={i===27?'calendar-day today':'calendar-day'} key={i}>{i+1}</button>)}</div></section>}
-export default App
+export type Student = {
+  id: number
+  trainer_id: number
+  name: string
+  email: string
+  goal: string
+  active: boolean
+  birth_date?: string | null
+  weight?: number | null
+  height?: number | null
+  created_at: string
+}
+
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+
+async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
+  const headers = new Headers(options.headers)
+  if (options.body && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json')
+  }
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+
+  const response = await fetch(`${API_URL}${path}`, { ...options, headers })
+  const text = await response.text()
+
+  if (!response.ok) {
+    try {
+      const payload = JSON.parse(text)
+      throw new Error(payload.detail ?? 'Erro na API')
+    } catch {
+      throw new Error('Erro na API')
+    }
+  }
+
+  return text ? (JSON.parse(text) as T) : (undefined as T)
+}
+
+export async function login(email: string, password: string) {
+  const body = new URLSearchParams({ username: email, password })
+  const response = await fetch(`${API_URL}/api/v1/auth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  })
+
+  if (!response.ok) {
+    throw new Error('E-mail ou senha incorretos')
+  }
+
+  return response.json() as Promise<{ access_token: string; token_type: string }>
+}
+
+export const getMe = (token: string) => request<User>('/api/v1/me', {}, token)
+export const getStudents = (token: string) => request<Student[]>('/api/v1/students', {}, token)
+export const createStudent = (token: string, data: Pick<Student, 'name' | 'email' | 'goal'>) =>
+  request<Student>('/api/v1/students', { method: 'POST', body: JSON.stringify(data) }, token)
